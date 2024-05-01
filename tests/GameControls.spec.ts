@@ -27,6 +27,11 @@ describe('gameControls score tests', () => {
         score: 127,
       },
     })
+    
+    
+    
+    
+    
 
     const div = wrapper.get('[data-test="score"]').element
     expect(div.classList).toContain('text-light-800')
