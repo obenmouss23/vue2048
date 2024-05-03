@@ -1,4 +1,4 @@
-name: CI/CD pipeline with Enhanced Features
+name: Continuous Integration and Deployment
 
 on:
   push:
@@ -7,95 +7,76 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
   schedule:
-    - cron: '0 8 * * 1'  # Exécuter chaque semaine le lundi à 8h
-
-env:
-  BUILD_ARTIFACT_NAME: "package"
-  ARTIFACT_RETENTION_DAYS: ${{ github.event_name == 'pull_request' ? '1' : '7' }}
+    - cron: "0 8 * * 1" # Lundi à 8h
 
 jobs:
   build:
+    name: Build and Test
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Check pnpm
+        uses: pnpm/action-setup@v3
         with:
-          version: latest
+          version: 8
 
       - name: Build application
-        run: |
+        run: | 
           pnpm install
           pnpm build
-        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' 
 
-      - name: Upload artifacts
+      - name: Archive production artifacts
+        if: ${{ github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_ARTIFACT_NAME }}
-          path: dist/
-        if: github.ref == 'refs/heads/main'
-
-  static-analysis-and-tests:
-    runs-on: ubuntu-latest
-    needs: build
-    strategy:
-      matrix:
-        run_static_and_tests: ["true", "false"]
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install dependencies
-        run: pnpm install
-        if: github.event_name == 'pull_request' && matrix.run_static_and_tests == 'true'
-
-      - name: Run static analysis
-        run: npm run lint
-        if: github.event_name == 'pull_request' && matrix.run_static_and_tests == 'true'
-
-      - name: Run unit tests
-        run: npm test
-        if: github.event_name == 'pull_request' && matrix.run_static_and_tests == 'true'
-
-  deploy-qa:
-    needs: build
-    runs-on: ubuntu-latest
-    inputs:
-      run_static_and_tests:
-        description: "Whether to run static analysis and tests"
-        required: true
-        default: "false"
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Deploy to QA
-        if: github.event_name == 'workflow_dispatch' && inputs.run_static_and_tests == 'true'
-        run: |
-          pnpm dlx @azure/static-web-apps-cli deploy ./dist --app-name stapp-vue2048-qa --env=production
+          name: dist
+          path: dist
+          retention-days: 7 # Durée de rétention d'une semaine pour les packages de la branche principale
           
-  deploy-prod:
-    needs: deploy-qa
-    runs-on: ubuntu-latest
-    inputs:
-      run_static_and_tests:
-        description: "Whether to run static analysis and tests"
-        required: true
-        default: "false"
-    steps:
-      - uses: actions/checkout@v3
+      - name: Tests and Static Analysis
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.static_and_tests == 'true' || github.event_name != 'workflow_dispatch' }}
+        run: | 
+          pnpm type-check
+          pnpm lint
+          pnpm test
 
-      - name: Deploy to Prod
-        if: github.event_name == 'workflow_dispatch' && inputs.run_static_and_tests == 'true'
-        run: |
-          pnpm dlx @azure/static-web-apps-cli deploy ./dist --app-name stapp-vue2048-prod --env=production
-      
-  conditional-run:
-    runs-on: ubuntu-latest
+  deploy:
+    name: Deploy to QA and PROD
     needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
     steps:
-      - name: Check if files are not in /docs
-        if: "!contains(github.event.head_commit.modified, '/docs/')" 
-        run: echo "Run pipeline as files are not in /docs"
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Check pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+      
+      - name: Build application
+        run: | 
+          pnpm install
+          pnpm build
+
+      - name: Install SWA
+        run: pnpm install @azure/static-web-apps-cli
+
+      - name: Deploy to QA
+        env: 
+          TOKEN_AZURE_QA: ${{ secrets.TOKEN_AZURE_QA }}
+        run: |
+          pnpm swa deploy ./dist --app-name stapp-vue2048-qa -d $TOKEN_AZURE_QA
+
+      - name: Deploy to PROD
+        env:
+          TOKEN_AZURE_PROD: ${{ secrets.TOKEN_AZURE_PROD }}
+        run: |
+          pnpm swa deploy ./dist --app-name stapp-vue2048-prod -d  $TOKEN_AZURE_PROD
 
