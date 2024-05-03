@@ -1,4 +1,4 @@
-name: test
+name: Continuous Integration and Deployment
 
 on:
   push:
@@ -8,10 +8,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 1" # Lundi à 8h
 
 jobs:
   build:
-    name: Build
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +23,7 @@ jobs:
       - name: Check pnpm
         uses: pnpm/action-setup@v3
         with:
-           version: 8
+          version: 8
 
       - name: Build application
         run: | 
@@ -29,17 +31,19 @@ jobs:
           pnpm build
 
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v2
         with:
           name: dist
-          path: |
-            dist
-      - name: Tests
+          path: dist
+          retention-days: 7 # Durée de rétention d'une semaine pour les packages de la branche principale
+          
+      - name: Tests and Static Analysis
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.static_and_tests == 'true' || github.event_name != 'workflow_dispatch' }}
         run: | 
           pnpm type-check
           pnpm lint
           pnpm test
-
 
   deploy:
     name: Deploy to QA and PROD
@@ -54,7 +58,7 @@ jobs:
       - name: Check pnpm
         uses: pnpm/action-setup@v3
         with:
-           version: 8
+          version: 8
       
       - name: Build application
         run: | 
@@ -75,4 +79,4 @@ jobs:
           TOKEN_AZURE_PROD: ${{ secrets.TOKEN_AZURE_PROD }}
         run: |
           pnpm swa deploy ./dist --app-name stapp-vue2048-prod -d  $TOKEN_AZURE_PROD
-          
+
