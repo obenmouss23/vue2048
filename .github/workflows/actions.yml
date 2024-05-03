@@ -1,82 +1,85 @@
-name: Continuous Integration and Deployment
+name: CI/CD pipeline with Notifications
 
 on:
   push:
     branches:
-      - main
+      - lab9-KMC
   pull_request:
     branches:
-      - main
-  workflow_dispatch:
+      - lab9-KMC    
   schedule:
-    - cron: "0 8 * * 1" # Lundi à 8h
+    - cron: '0 8 * * 1'  # Exécuter chaque semaine le lundi à 8h
+
+env:
+  BUILD_ARTIFACT_NAME: "package"
 
 jobs:
   build:
-    name: Build and Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
-      - name: Check pnpm
-        uses: pnpm/action-setup@v3
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
         with:
-          version: 8
+          version: latest
 
       - name: Build application
-        run: | 
+        run: |
           pnpm install
           pnpm build
+        if: github.ref == 'refs/heads/lab9-KMC' || github.event_name == 'pull_request' 
 
-      - name: Archive production artifacts
-        if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: dist
-          path: dist
-          retention-days: 7 # Durée de rétention d'une semaine pour les packages de la branche principale
-          
-      - name: Tests and Static Analysis
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.static_and_tests == 'true' || github.event_name != 'workflow_dispatch' }}
-        run: | 
-          pnpm type-check
-          pnpm lint
-          pnpm test
+          name: ${{ env.BUILD_ARTIFACT_NAME }}
+          path: dist/
+        if: github.ref == 'refs/heads/lab9-KMC' 
+        env:
+          ARTIFACT_RETENTION_DAYS: 7
 
-  deploy:
-    name: Deploy to QA and PROD
+  static-analysis-and-tests:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: pnpm install
+        if: github.event_name == 'pull_request'
+
+      - name: Run static analysis
+        run: npm run lint
+        if: github.event_name == 'pull_request'
+
+      - name: Run unit tests
+        run: npm test
+        if: github.event_name == 'pull_request'
+
+  deploy-qa:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Check pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 8
+      - uses: actions/checkout@v3
       
-      - name: Build application
-        run: | 
-          pnpm install
-          pnpm build
-
-      - name: Install SWA
-        run: pnpm install @azure/static-web-apps-cli
-
       - name: Deploy to QA
-        env: 
-          TOKEN_AZURE_QA: ${{ secrets.TOKEN_AZURE_QA }}
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          pnpm swa deploy ./dist --app-name stapp-vue2048-qa -d $TOKEN_AZURE_QA
-
-      - name: Deploy to PROD
-        env:
-          TOKEN_AZURE_PROD: ${{ secrets.TOKEN_AZURE_PROD }}
+          pnpm dlx @azure/static-web-apps-cli deploy ./dist --app-name stapp-vue2048-qa --env=production
+        # Nouvelle étape pour envoyer une notification par e-mail en cas d'échec du déploiement
+      - name: Notify on deployment failure
+        if: failure()
         run: |
-          pnpm swa deploy ./dist --app-name stapp-vue2048-prod -d  $TOKEN_AZURE_PROD
+          echo "Deployment to QA has failed. Please investigate." | mail -s "Deployment Failure Notification" oussama20benmoussa@gmail.com
 
+  deploy-prod:
+    needs: deploy-qa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy to Prod
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          pnpm dlx @azure/static-web-apps-cli deploy ./dist --app-name stapp-vue2048-prod --env=production  
