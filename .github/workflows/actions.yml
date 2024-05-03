@@ -12,6 +12,7 @@ on:
 
 env:
   BUILD_ARTIFACT_NAME: "package"
+  ARTIFACT_RETENTION_DAYS: ${{ github.event_name == 'pull_request' ? '1' : '7' }}
 
 jobs:
   build:
@@ -35,9 +36,7 @@ jobs:
         with:
           name: ${{ env.BUILD_ARTIFACT_NAME }}
           path: dist/
-        if: github.ref == 'refs/heads/main' 
-        env:
-          ARTIFACT_RETENTION_DAYS: ${{ github.event_name == 'pull_request' ? 1 : 7 }}
+        if: github.ref == 'refs/heads/main'
 
   static-analysis-and-tests:
     runs-on: ubuntu-latest
