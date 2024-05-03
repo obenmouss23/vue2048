@@ -6,7 +6,7 @@ on:
       - main
   pull_request:
     branches:
-      - main 
+      - main    
   schedule:
     - cron: '0 8 * * 1'  # Exécuter chaque semaine le lundi à 8h
 
@@ -28,16 +28,16 @@ jobs:
         run: |
           pnpm install
           pnpm build
-        if: github.ref == 'refs/heads/lab9-KMC' || github.event_name == 'pull_request' 
+        if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' 
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_ARTIFACT_NAME }}
           path: dist/
-        if: github.ref == 'refs/heads/lab9-KMC' 
+        if: github.ref == 'refs/heads/main' 
         env:
-          ARTIFACT_RETENTION_DAYS: ${{ github.event_name == 'pull_request' ? 1 : 7 }} # Durée de rétention différente en fonction de l'événement
+          ARTIFACT_RETENTION_DAYS: ${{ github.event_name == 'pull_request' ? 1 : 7 }}
 
   static-analysis-and-tests:
     runs-on: ubuntu-latest
@@ -86,4 +86,3 @@ jobs:
       - name: Check if files are not in /docs
         if: "!contains(github.event.head_commit.modified, '/docs/')" 
         run: echo "Run pipeline as files are not in /docs"
-
